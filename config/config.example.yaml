@@ -1,0 +1,34 @@
+server:
+  host: "0.0.0.0"
+  port: 8000
+
+database:
+  postgres:
+    dsn: "postgres://postgres:password@localhost:5432/vectordb?sslmode=disable"
+  neo4j:
+    uri: "bolt://localhost:7687"
+    username: "neo4j"
+    password: "password"
+  redis:
+    addr: "localhost:6379"
+    password: ""
+    db: 0
+
+embedding:
+  provider: "local"  # "local" or "cloud"
+  model: "embeddinggemma-300m"
+  endpoint: "http://localhost:8080"
+  api_key: ""
+
+analysis:
+  max_file_size: 1048576  # 1MB
+  ignore_patterns:
+    - "node_modules"
+    - ".git"
+    - "vendor"
+    - "build"
+    - "dist"
+    - "*.min.js"
+    - "*.map"
+  include_tests: true
+  analyze_comments: true
