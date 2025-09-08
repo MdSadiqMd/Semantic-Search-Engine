@@ -26,6 +26,7 @@ func NewParserRegistry() *ParserRegistry {
 	}
 
 	registry.RegisterParser(NewGoParser())
+	registry.RegisterParser(NewTypeScriptParser())
 
 	return registry
 }
