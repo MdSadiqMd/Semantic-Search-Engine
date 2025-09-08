@@ -11,7 +11,7 @@ import (
 	"github.com/MdSadiqMd/Semantic-Search-Engine/internal/models"
 )
 
-func writeTempFile(t *testing.T, content string) string {
+func writeTempFileGolang(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
 	file := filepath.Join(dir, "test.go")
@@ -36,7 +36,7 @@ func Add(a int, b int) int {
 	return a + b
 }`
 
-	file := writeTempFile(t, src)
+	file := writeTempFileGolang(t, src)
 
 	elements, rels, err := parser.ParseFile(context.Background(), file)
 	if err != nil {
@@ -98,7 +98,7 @@ type Person struct {
 	Age  int
 }`
 
-	file := writeTempFile(t, src)
+	file := writeTempFileGolang(t, src)
 
 	elements, rels, err := parser.ParseFile(context.Background(), file)
 	if err != nil {
@@ -144,7 +144,7 @@ func TestGoParser_ParseFile_Import(t *testing.T) {
 	src := `package main
 import f "fmt"`
 
-	file := writeTempFile(t, src)
+	file := writeTempFileGolang(t, src)
 
 	elements, _, err := parser.ParseFile(context.Background(), file)
 	if err != nil {

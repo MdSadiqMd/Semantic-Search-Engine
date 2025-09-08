@@ -2,6 +2,7 @@ package ast
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -66,7 +67,7 @@ func (p *TypeScriptParser) parseImports(content, filePath string) []models.CodeE
 	var elements []models.CodeElement
 
 	// Match import statements
-	importRegex := regexp.MustCompile(`(?m)^import\s+(.*?)\s+from\s+['"]([^'"]+)['"];?`)
+	importRegex := regexp.MustCompile(`(?m)^\s*import\s+(.*?)\s+from\s+['"]([^'"]+)['"];?`)
 	matches := importRegex.FindAllStringSubmatch(content, -1)
 
 	strings.Split(content, "\n")
@@ -145,8 +146,14 @@ func (p *TypeScriptParser) parseFunctions(content, filePath string) ([]models.Co
 	var relationships []models.Relationship
 
 	// Function declarations
-	funcRegex := regexp.MustCompile(`(?ms)(?:^|\n)((?:export\s+)?(?:async\s+)?function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\([^)]*\)(?:\s*:\s*[^{]+)?\s*\{)`)
+	funcRegex := regexp.MustCompile(
+		`(?ms)(?:export\s+)?(?:async\s+)?function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\([^)]*\)(?:\s*:\s*[^ {]+)?\s*\{`,
+	)
 	matches := funcRegex.FindAllStringSubmatchIndex(content, -1)
+	if len(matches) == 0 {
+		fmt.Println("No functions matched in:", filePath)
+		fmt.Println("Content:\n", content)
+	}
 
 	for _, match := range matches {
 		if len(match) < 6 {
@@ -196,10 +203,12 @@ func (p *TypeScriptParser) parseFunctions(content, filePath string) ([]models.Co
 	}
 
 	// Arrow functions
-	arrowRegex := regexp.MustCompile(`(?m)(?:const|let|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*[:=]\s*(?:\([^)]*\)|[^=])\s*=>\s*[{(]`)
-	arrowRegex.FindAllStringSubmatchIndex(content, -1)
+	arrowRegex := regexp.MustCompile(
+		`(?m)(?:const|let|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*[:=]\s*\([^)]*\)\s*(?::\s*[^=]+)?\s*=>\s*[{(]`,
+	)
+	arrowMatches := arrowRegex.FindAllStringSubmatchIndex(content, -1)
 
-	for _, match := range matches {
+	for _, match := range arrowMatches {
 		if len(match) < 4 {
 			continue
 		}
@@ -590,9 +599,10 @@ func (p *TypeScriptParser) findLineNumberByIndex(content string, index int) int 
 func (p *TypeScriptParser) findFunctionEnd(content string, startIndex int) int {
 	braceCount := 0
 	for i := startIndex; i < len(content); i++ {
-		if content[i] == '{' {
+		switch content[i] {
+		case '{':
 			braceCount++
-		} else if content[i] == '}' {
+		case '}':
 			braceCount--
 			if braceCount == 0 {
 				return i + 1
