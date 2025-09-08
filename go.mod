@@ -3,6 +3,7 @@ module github.com/MdSadiqMd/Semantic-Search-Engine
 go 1.23.3
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.5
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.3
 	github.com/pgvector/pgvector-go v0.3.0
