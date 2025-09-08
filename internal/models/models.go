@@ -34,6 +34,7 @@ const (
 
 type CodeElement struct {
 	ID         string                 `json:"id"`
+	ProjectID  string                 `json:"project_id"`
 	Name       string                 `json:"name"`
 	Type       ElementType            `json:"type"`
 	FilePath   string                 `json:"file_path"`

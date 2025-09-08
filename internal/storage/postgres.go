@@ -116,6 +116,125 @@ func (s *PostgresStorage) initSchema() error {
 	return nil
 }
 
+func (s *PostgresStorage) GetCodeElement(ctx context.Context, id string) (*models.CodeElement, error) {
+	query := `
+        SELECT id, project_id, name, type, file_path, start_line, end_line, package, signature, doc_comment, code, embedding, metadata, created_at, updated_at
+        FROM code_elements WHERE id = $1
+    `
+	var element models.CodeElement
+	var embedding pgvector.Vector
+	var projectID string
+
+	err := s.pool.QueryRow(ctx, query, id).Scan(
+		&element.ID, &projectID, &element.Name, &element.Type, &element.FilePath,
+		&element.StartLine, &element.EndLine, &element.Package, &element.Signature,
+		&element.DocComment, &element.Code, &embedding, &element.Metadata,
+		&element.CreatedAt, &element.UpdatedAt)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get code element: %w", err)
+	}
+
+	element.ID = projectID
+	if embedding.Slice() != nil {
+		element.Embedding = make([]float32, len(embedding.Slice()))
+		for i, v := range embedding.Slice() {
+			element.Embedding[i] = float32(v)
+		}
+	}
+
+	return &element, nil
+}
+
+func (s *PostgresStorage) GetCodeElements(ctx context.Context, filters map[string]interface{}) ([]models.CodeElement, error) {
+	query := `
+        SELECT id, project_id, name, type, file_path, start_line, end_line, package, signature, doc_comment, code, embedding, metadata, created_at, updated_at
+        FROM code_elements WHERE 1=1
+    `
+	args := []interface{}{}
+	argCount := 0
+
+	if projectID, ok := filters["project_id"].(string); ok && projectID != "" {
+		argCount++
+		query += fmt.Sprintf(" AND project_id = $%d", argCount)
+		args = append(args, projectID)
+	}
+
+	if elementType, ok := filters["type"].(string); ok && elementType != "" {
+		argCount++
+		query += fmt.Sprintf(" AND type = $%d", argCount)
+		args = append(args, elementType)
+	}
+
+	if pkg, ok := filters["package"].(string); ok && pkg != "" {
+		argCount++
+		query += fmt.Sprintf(" AND package = $%d", argCount)
+		args = append(args, pkg)
+	}
+
+	if filePath, ok := filters["file_path"].(string); ok && filePath != "" {
+		argCount++
+		query += fmt.Sprintf(" AND file_path = $%d", argCount)
+		args = append(args, filePath)
+	}
+
+	if elementTypes, ok := filters["element_types"].([]string); ok && len(elementTypes) > 0 {
+		argCount++
+		query += fmt.Sprintf(" AND type = ANY($%d)", argCount)
+		args = append(args, elementTypes)
+	}
+
+	if packages, ok := filters["packages"].([]string); ok && len(packages) > 0 {
+		argCount++
+		query += fmt.Sprintf(" AND package = ANY($%d)", argCount)
+		args = append(args, packages)
+	}
+
+	query += " ORDER BY created_at DESC"
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get code elements: %w", err)
+	}
+	defer rows.Close()
+
+	var elements []models.CodeElement
+	for rows.Next() {
+		var element models.CodeElement
+		var embedding pgvector.Vector
+		var projectID string
+
+		err := rows.Scan(
+			&element.ID, &projectID, &element.Name, &element.Type, &element.FilePath,
+			&element.StartLine, &element.EndLine, &element.Package, &element.Signature,
+			&element.DocComment, &element.Code, &embedding, &element.Metadata,
+			&element.CreatedAt, &element.UpdatedAt)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan code element: %w", err)
+		}
+
+		element.ID = projectID
+		if embedding.Slice() != nil {
+			element.Embedding = make([]float32, len(embedding.Slice()))
+			for i, v := range embedding.Slice() {
+				element.Embedding[i] = float32(v)
+			}
+		}
+
+		elements = append(elements, element)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate code elements: %w", err)
+	}
+
+	return elements, nil
+}
+
 func (s *PostgresStorage) CreateProject(ctx context.Context, project *models.Project) error {
 	query := `
 		INSERT INTO projects (name, path, language, statistics)
