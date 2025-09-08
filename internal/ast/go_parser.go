@@ -232,7 +232,7 @@ func (p *GoParser) parseTypeSpec(typeSpec *ast.TypeSpec, genDecl *ast.GenDecl, f
 			}
 		}
 	default:
-		elementType = models.Struct 
+		elementType = models.Struct
 		signature = fmt.Sprintf("type %s %s", typeSpec.Name.Name, p.exprToString(typeSpec.Type))
 	}
 
@@ -370,34 +370,42 @@ func (p *GoParser) extractComments(commentGroup *ast.CommentGroup) []string {
 }
 
 func (p *GoParser) extractFuncSignature(funcDecl *ast.FuncDecl) string {
-	var parts []string
+	var sb strings.Builder
 
-	parts = append(parts, "func")
+	sb.WriteString("func")
 
 	// Add receiver
 	if funcDecl.Recv != nil {
 		receiver := p.formatFieldList(funcDecl.Recv)
-		parts = append(parts, fmt.Sprintf("(%s)", receiver))
+		sb.WriteString(" (")
+		sb.WriteString(receiver)
+		sb.WriteString(")")
 	}
 
 	// Add function name
-	parts = append(parts, funcDecl.Name.Name)
+	sb.WriteString(" ")
+	sb.WriteString(funcDecl.Name.Name)
 
 	// Add parameters
 	params := p.formatFieldList(funcDecl.Type.Params)
-	parts = append(parts, fmt.Sprintf("(%s)", params))
+	sb.WriteString("(")
+	sb.WriteString(params)
+	sb.WriteString(")")
 
 	// Add return types
 	if funcDecl.Type.Results != nil {
 		results := p.formatFieldList(funcDecl.Type.Results)
 		if len(funcDecl.Type.Results.List) == 1 && len(funcDecl.Type.Results.List[0].Names) == 0 {
-			parts = append(parts, results)
+			sb.WriteString(" ")
+			sb.WriteString(results)
 		} else {
-			parts = append(parts, fmt.Sprintf("(%s)", results))
+			sb.WriteString(" (")
+			sb.WriteString(results)
+			sb.WriteString(")")
 		}
 	}
 
-	return strings.Join(parts, " ")
+	return sb.String()
 }
 
 func (p *GoParser) extractStructSignature(name string, structType *ast.StructType) string {
