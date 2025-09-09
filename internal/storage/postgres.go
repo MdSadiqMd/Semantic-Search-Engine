@@ -2,7 +2,9 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/MdSadiqMd/Semantic-Search-Engine/internal/models"
 	"github.com/jackc/pgx/v5"
@@ -113,6 +115,140 @@ func (s *PostgresStorage) initSchema() error {
 		return fmt.Errorf("failed to create schema: %w", err)
 	}
 
+	return nil
+}
+
+func (s *PostgresStorage) CreateProject(ctx context.Context, project *models.Project) error {
+	query := `
+		INSERT INTO projects (name, path, language, statistics)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id, created_at, updated_at
+	`
+	err := s.pool.QueryRow(ctx, query, project.Name, project.Path, project.Language, project.Statistics).
+		Scan(&project.ID, &project.CreatedAt, &project.UpdatedAt)
+	if err != nil {
+		return fmt.Errorf("failed to create project: %w", err)
+	}
+
+	return nil
+}
+
+func (s *PostgresStorage) UpdateProject(ctx context.Context, id string, updates map[string]interface{}) (*models.Project, error) {
+	setClauses := []string{}
+	args := []interface{}{}
+	i := 1
+
+	for k, v := range updates {
+		if k == "statistics" {
+			b, err := json.Marshal(v)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal statistics: %w", err)
+			}
+			v = b
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", k, i))
+		args = append(args, v)
+		i++
+	}
+
+	if len(setClauses) == 0 {
+		return nil, fmt.Errorf("no updates provided")
+	}
+
+	query := fmt.Sprintf(`UPDATE projects SET %s, updated_at = NOW() WHERE id = $%d RETURNING id, name, path, language, statistics, created_at, updated_at`,
+		strings.Join(setClauses, ", "), i)
+	args = append(args, id)
+
+	var p models.Project
+	var stats []byte
+	err := s.pool.QueryRow(ctx, query, args...).Scan(
+		&p.ID, &p.Name, &p.Path, &p.Language, &stats, &p.CreatedAt, &p.UpdatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update project: %w", err)
+	}
+
+	_ = json.Unmarshal(stats, &p.Statistics)
+	return &p, nil
+}
+
+func (s *PostgresStorage) DeleteProject(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM projects WHERE id = $1`, id)
+	return err
+}
+
+func (s *PostgresStorage) GetProject(ctx context.Context, id string) (*models.Project, error) {
+	query := `
+		SELECT id, name, path, language, statistics, created_at, updated_at
+		FROM projects WHERE id = $1
+	`
+	var project models.Project
+	err := s.pool.QueryRow(ctx, query, id).
+		Scan(&project.ID, &project.Name, &project.Path, &project.Language, &project.Statistics, &project.CreatedAt, &project.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get project: %w", err)
+	}
+
+	return &project, nil
+}
+
+func (s *PostgresStorage) ListProjects(ctx context.Context) ([]models.Project, error) {
+	query := `
+		SELECT id, name, path, language, statistics, created_at, updated_at
+		FROM projects ORDER BY updated_at DESC
+	`
+	rows, err := s.pool.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list projects: %w", err)
+	}
+	defer rows.Close()
+
+	var projects []models.Project
+	for rows.Next() {
+		var project models.Project
+		err := rows.Scan(&project.ID, &project.Name, &project.Path, &project.Language, &project.Statistics, &project.CreatedAt, &project.UpdatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan project: %w", err)
+		}
+		projects = append(projects, project)
+	}
+
+	return projects, nil
+}
+
+func (s *PostgresStorage) GetProjectStats(ctx context.Context, projectID string) (map[string]interface{}, error) {
+	var stats []byte
+	err := s.pool.QueryRow(ctx, `SELECT statistics FROM projects WHERE id = $1`, projectID).Scan(&stats)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get project stats: %w", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(stats, &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal stats: %w", err)
+	}
+
+	return result, nil
+}
+
+func (s *PostgresStorage) CreateCodeElement(ctx context.Context, element *models.CodeElement) error {
+	query := `
+		INSERT INTO code_elements (project_id, name, type, file_path, start_line, end_line, package, signature, doc_comment, code, embedding, metadata)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		RETURNING id, created_at, updated_at
+	`
+	var embedding pgvector.Vector
+	if len(element.Embedding) > 0 {
+		embedding = pgvector.NewVector(element.Embedding)
+	}
+
+	err := s.pool.QueryRow(ctx, query,
+		element.ID, element.Name, element.Type, element.FilePath, element.StartLine, element.EndLine,
+		element.Package, element.Signature, element.DocComment, element.Code, embedding, element.Metadata).
+		Scan(&element.ID, &element.CreatedAt, &element.UpdatedAt)
+	if err != nil {
+		return fmt.Errorf("failed to create code element: %w", err)
+	}
 	return nil
 }
 
@@ -235,79 +371,51 @@ func (s *PostgresStorage) GetCodeElements(ctx context.Context, filters map[strin
 	return elements, nil
 }
 
-func (s *PostgresStorage) CreateProject(ctx context.Context, project *models.Project) error {
-	query := `
-		INSERT INTO projects (name, path, language, statistics)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, created_at, updated_at
-	`
-	err := s.pool.QueryRow(ctx, query, project.Name, project.Path, project.Language, project.Statistics).
-		Scan(&project.ID, &project.CreatedAt, &project.UpdatedAt)
-	if err != nil {
-		return fmt.Errorf("failed to create project: %w", err)
-	}
+func (s *PostgresStorage) UpdateCodeElement(ctx context.Context, id string, updates map[string]interface{}) (*models.CodeElement, error) {
+	setClauses := []string{}
+	args := []interface{}{}
+	i := 1
 
-	return nil
-}
-
-func (s *PostgresStorage) GetProject(ctx context.Context, id string) (*models.Project, error) {
-	query := `
-		SELECT id, name, path, language, statistics, created_at, updated_at
-		FROM projects WHERE id = $1
-	`
-	var project models.Project
-	err := s.pool.QueryRow(ctx, query, id).
-		Scan(&project.ID, &project.Name, &project.Path, &project.Language, &project.Statistics, &project.CreatedAt, &project.UpdatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get project: %w", err)
-	}
-
-	return &project, nil
-}
-
-func (s *PostgresStorage) ListProjects(ctx context.Context) ([]models.Project, error) {
-	query := `
-		SELECT id, name, path, language, statistics, created_at, updated_at
-		FROM projects ORDER BY updated_at DESC
-	`
-	rows, err := s.pool.Query(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list projects: %w", err)
-	}
-	defer rows.Close()
-
-	var projects []models.Project
-	for rows.Next() {
-		var project models.Project
-		err := rows.Scan(&project.ID, &project.Name, &project.Path, &project.Language, &project.Statistics, &project.CreatedAt, &project.UpdatedAt)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan project: %w", err)
+	for k, v := range updates {
+		if k == "metadata" {
+			b, err := json.Marshal(v)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal metadata: %w", err)
+			}
+			v = b
 		}
-		projects = append(projects, project)
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", k, i))
+		args = append(args, v)
+		i++
 	}
 
-	return projects, nil
+	if len(setClauses) == 0 {
+		return nil, fmt.Errorf("no updates provided")
+	}
+
+	query := fmt.Sprintf(`UPDATE code_elements SET %s, updated_at = NOW() WHERE id = $%d 
+		RETURNING id, project_id, name, type, file_path, start_line, end_line, package, signature, doc_comment, code, metadata, created_at, updated_at`,
+		strings.Join(setClauses, ", "), i)
+	args = append(args, id)
+
+	var e models.CodeElement
+	var metadata []byte
+	err := s.pool.QueryRow(ctx, query, args...).Scan(
+		&e.ID, &e.ProjectID, &e.Name, &e.Type, &e.FilePath, &e.StartLine,
+		&e.EndLine, &e.Package, &e.Signature, &e.DocComment, &e.Code,
+		&metadata, &e.CreatedAt, &e.UpdatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update code element: %w", err)
+	}
+
+	_ = json.Unmarshal(metadata, &e.Metadata)
+	return &e, nil
 }
 
-func (s *PostgresStorage) CreateCodeElement(ctx context.Context, element *models.CodeElement) error {
-	query := `
-		INSERT INTO code_elements (project_id, name, type, file_path, start_line, end_line, package, signature, doc_comment, code, embedding, metadata)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-		RETURNING id, created_at, updated_at
-	`
-	var embedding pgvector.Vector
-	if len(element.Embedding) > 0 {
-		embedding = pgvector.NewVector(element.Embedding)
-	}
-
-	err := s.pool.QueryRow(ctx, query,
-		element.ID, element.Name, element.Type, element.FilePath, element.StartLine, element.EndLine,
-		element.Package, element.Signature, element.DocComment, element.Code, embedding, element.Metadata).
-		Scan(&element.ID, &element.CreatedAt, &element.UpdatedAt)
-	if err != nil {
-		return fmt.Errorf("failed to create code element: %w", err)
-	}
-	return nil
+func (s *PostgresStorage) DeleteCodeElement(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM code_elements WHERE id = $1`, id)
+	return err
 }
 
 func (s *PostgresStorage) SearchSimilar(ctx context.Context, embedding []float32, limit int, threshold float64, filters map[string]interface{}) ([]models.SearchResult, error) {
@@ -425,6 +533,35 @@ func (s *PostgresStorage) CreateAnalysisJob(ctx context.Context, job *models.Ana
 	}
 
 	return nil
+}
+
+func (s *PostgresStorage) ListAnalysisJobs(ctx context.Context, projectID string) ([]*models.AnalysisJob, error) {
+	query := `SELECT id, project_id, status, progress, error, created_at, updated_at 
+	          FROM analysis_jobs`
+	args := []interface{}{}
+
+	if projectID != "" {
+		query += " WHERE project_id = $1"
+		args = append(args, projectID)
+	}
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list analysis jobs: %w", err)
+	}
+	defer rows.Close()
+
+	var jobs []*models.AnalysisJob
+	for rows.Next() {
+		var j models.AnalysisJob
+		err := rows.Scan(&j.ID, &j.ProjectID, &j.Status, &j.Progress, &j.Error, &j.CreatedAt, &j.UpdatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan job: %w", err)
+		}
+		jobs = append(jobs, &j)
+	}
+
+	return jobs, nil
 }
 
 func (s *PostgresStorage) UpdateAnalysisJob(ctx context.Context, id string, status string, progress int, error string) error {
