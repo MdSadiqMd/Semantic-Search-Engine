@@ -58,10 +58,8 @@ services:
     restart: unless-stopped
 
   embedding-service:
-    build:
-      context: .
-      target: embedding-service
-    container_name: semantic-search-engine-embedding
+    image: pytorch/pytorch:2.1.0-cuda11.8-devel
+    container_name: semantic-search-embedding
     environment:
       - MODEL_NAME=google/embeddinggemma-300m
       - MODEL_CACHE_DIR=/app/models
@@ -71,7 +69,18 @@ services:
       - "8080:8080"
     volumes:
       - embedding_models:/app/models
+      - ./scripts/embedding-server.py:/app/server.py
+    command: python /app/server.py
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     restart: unless-stopped
+    profiles:
+      - local-embedding
 
   server:
     build:
