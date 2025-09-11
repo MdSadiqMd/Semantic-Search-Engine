@@ -12,7 +12,6 @@ import (
 	"github.com/MdSadiqMd/Semantic-Search-Engine/internal/queue"
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
-	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
 
@@ -48,16 +47,32 @@ func NewWebSocketHandler(pubsub *queue.RedisPubSub, logger *zap.Logger) *WebSock
 func (h *WebSocketHandler) Start() {
 	ctx := context.Background()
 
-	analysisChannel := h.pubsub.Subscribe(ctx, "analysis_updates")
+	analysisChannel, err := h.pubsub.Subscribe(ctx, "analysis_updates")
+	if err != nil {
+		h.logger.Error("Failed to subscribe to analysis updates", zap.Error(err))
+		return
+	}
 	go h.handleRedisMessages(analysisChannel, "analysis_update")
 
-	projectChannel := h.pubsub.Subscribe(ctx, "project_updates")
+	projectChannel, err := h.pubsub.Subscribe(ctx, "project_updates")
+	if err != nil {
+		h.logger.Error("Failed to subscribe to project updates", zap.Error(err))
+		return
+	}
 	go h.handleRedisMessages(projectChannel, "project_update")
 
-	searchChannel := h.pubsub.Subscribe(ctx, "search_updates")
+	searchChannel, err := h.pubsub.Subscribe(ctx, "search_updates")
+	if err != nil {
+		h.logger.Error("Failed to subscribe to search updates", zap.Error(err))
+		return
+	}
 	go h.handleRedisMessages(searchChannel, "search_update")
 
-	graphChannel := h.pubsub.Subscribe(ctx, "knowledge_graph_updates")
+	graphChannel, err := h.pubsub.Subscribe(ctx, "knowledge_graph_updates")
+	if err != nil {
+		h.logger.Error("Failed to subscribe to graph updates", zap.Error(err))
+		return
+	}
 	go h.handleRedisMessages(graphChannel, "knowledge_graph_update")
 
 	h.logger.Info("WebSocket handler started")
@@ -231,11 +246,11 @@ func (h *WebSocketHandler) unregisterClient(client *Client) {
 	}
 }
 
-func (h *WebSocketHandler) handleRedisMessages(channel <-chan *redis.Message, messageType string) {
+func (h *WebSocketHandler) handleRedisMessages(channel <-chan interface{}, messageType string) {
 	for msg := range channel {
-		var data map[string]interface{}
-		if err := json.Unmarshal([]byte(msg.Payload), &data); err != nil {
-			h.logger.Error("Failed to unmarshal Redis message", zap.Error(err))
+		data, ok := msg.(map[string]interface{})
+		if !ok {
+			h.logger.Error("Received invalid message type from Redis")
 			continue
 		}
 

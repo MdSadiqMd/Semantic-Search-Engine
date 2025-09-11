@@ -13,6 +13,7 @@ import (
 	"github.com/MdSadiqMd/Semantic-Search-Engine/internal/queue"
 	"github.com/MdSadiqMd/Semantic-Search-Engine/internal/search"
 	"github.com/MdSadiqMd/Semantic-Search-Engine/internal/storage"
+	"github.com/MdSadiqMd/Semantic-Search-Engine/internal/types"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
 	"go.uber.org/zap"
@@ -24,8 +25,8 @@ type APIHandler struct {
 	searchService         *search.Service
 	knowledgeGraphService *knowledgegraph.Service
 	embeddingService      *embedding.Service
-	queue                 *queue.RedisQueue
-	pubsub                *queue.RedisPubSub
+	queue                 types.Queue
+	pubsub                types.PubSub
 	logger                *zap.Logger
 }
 
@@ -35,8 +36,8 @@ func NewAPIHandler(
 	searchService *search.Service,
 	knowledgeGraphService *knowledgegraph.Service,
 	embeddingService *embedding.Service,
-	redisQueue *queue.RedisQueue,
-	redisPubSub *queue.RedisPubSub,
+	queue types.Queue,
+	pubsub types.PubSub,
 	logger *zap.Logger,
 ) *APIHandler {
 	return &APIHandler{
@@ -45,8 +46,8 @@ func NewAPIHandler(
 		searchService:         searchService,
 		knowledgeGraphService: knowledgeGraphService,
 		embeddingService:      embeddingService,
-		queue:                 redisQueue,
-		pubsub:                redisPubSub,
+		queue:                 queue,
+		pubsub:                pubsub,
 		logger:                logger,
 	}
 }
@@ -416,7 +417,7 @@ func (h *APIHandler) StartAnalysis(w http.ResponseWriter, r *http.Request) {
 	}
 
 	queueJob := queue.CreateAnalyzeProjectJob(projectID)
-	err = h.queue.Push(r.Context(), queueJob)
+	err = h.queue.Enqueue(r.Context(), queueJob.Type, queueJob.Data)
 	if err != nil {
 		h.logger.Error("Failed to queue analysis job", zap.Error(err))
 		render.Status(r, http.StatusInternalServerError)

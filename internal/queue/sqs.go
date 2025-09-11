@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"time"
 
+	"github.com/MdSadiqMd/Semantic-Search-Engine/internal/types"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"go.uber.org/zap"
 )
 
@@ -53,25 +57,37 @@ func (q *SQSQueue) Enqueue(ctx context.Context, jobType string, payload interfac
 	return nil
 }
 
-func (q *SQSQueue) Dequeue(ctx context.Context) ([]QueueMessage, error) {
+func (q *SQSQueue) Dequeue(ctx context.Context, timeout time.Duration) ([]types.QueueMessage, error) {
+	waitTime := min(int32(timeout.Seconds()), 20)
+
 	result, err := q.client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
 		QueueUrl:            aws.String(q.queueURL),
 		MaxNumberOfMessages: 10,
-		WaitTimeSeconds:     20,
+		WaitTimeSeconds:     waitTime,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to receive messages from SQS: %w", err)
 	}
 
-	var messages []QueueMessage
+	var messages []types.QueueMessage
 	for _, sqsMsg := range result.Messages {
-		var msg QueueMessage
-		if err := json.Unmarshal([]byte(*sqsMsg.Body), &msg); err != nil {
+		var msgData map[string]interface{}
+		if err := json.Unmarshal([]byte(*sqsMsg.Body), &msgData); err != nil {
 			q.logger.Error("Failed to unmarshal SQS message", zap.Error(err))
 			continue
 		}
 
-		msg.ID = *sqsMsg.ReceiptHandle
+		msgType, ok := msgData["type"].(string)
+		if !ok {
+			q.logger.Error("Missing type in SQS message")
+			continue
+		}
+
+		msg := types.QueueMessage{
+			ID:      *sqsMsg.ReceiptHandle,
+			Type:    msgType,
+			Payload: msgData["payload"],
+		}
 		messages = append(messages, msg)
 	}
 
@@ -90,13 +106,34 @@ func (q *SQSQueue) Delete(ctx context.Context, messageID string) error {
 	return nil
 }
 
-// SQS client doesn't need explicit closing, lol
-func (q *SQSQueue) Close() error {
+func (q *SQSQueue) Size(ctx context.Context) (int64, error) {
+	result, err := q.client.GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+		QueueUrl: aws.String(q.queueURL),
+		AttributeNames: []sqstypes.QueueAttributeName{
+			sqstypes.QueueAttributeNameApproximateNumberOfMessages,
+		},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("failed to get queue size: %w", err)
+	}
+
+	if count, ok := result.Attributes["ApproximateNumberOfMessages"]; ok {
+		return strconv.ParseInt(count, 10, 64)
+	}
+
+	return 0, nil
+}
+
+func (q *SQSQueue) Clear(ctx context.Context) error {
+	_, err := q.client.PurgeQueue(ctx, &sqs.PurgeQueueInput{
+		QueueUrl: aws.String(q.queueURL),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to purge SQS queue: %w", err)
+	}
 	return nil
 }
 
-type QueueMessage struct {
-	ID      string      `json:"id"`
-	Type    string      `json:"type"`
-	Payload interface{} `json:"payload"`
+func (q *SQSQueue) Close() error {
+	return nil
 }

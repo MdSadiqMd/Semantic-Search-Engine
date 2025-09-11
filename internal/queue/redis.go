@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/MdSadiqMd/Semantic-Search-Engine/internal/types"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -27,16 +28,12 @@ func NewRedisQueue(addr, password string, db int, queueName string) *RedisQueue 
 	}
 }
 
-type Job struct {
-	ID         string                 `json:"id"`
-	Type       string                 `json:"type"`
-	Data       map[string]interface{} `json:"data"`
-	CreatedAt  time.Time              `json:"created_at"`
-	Attempts   int                    `json:"attempts"`
-	MaxRetries int                    `json:"max_retries"`
-}
+func (q *RedisQueue) Enqueue(ctx context.Context, jobType string, payload interface{}) error {
+	job, ok := payload.(*Job)
+	if !ok {
+		return fmt.Errorf("invalid payload type, expected *Job")
+	}
 
-func (q *RedisQueue) Push(ctx context.Context, job *Job) error {
 	data, err := json.Marshal(job)
 	if err != nil {
 		return fmt.Errorf("failed to marshal job: %w", err)
@@ -50,7 +47,7 @@ func (q *RedisQueue) Push(ctx context.Context, job *Job) error {
 	return nil
 }
 
-func (q *RedisQueue) Pop(ctx context.Context, timeout time.Duration) (*Job, error) {
+func (q *RedisQueue) Dequeue(ctx context.Context, timeout time.Duration) ([]types.QueueMessage, error) {
 	result, err := q.client.BRPop(ctx, timeout, q.name).Result()
 	if err != nil {
 		if err == redis.Nil {
@@ -69,7 +66,31 @@ func (q *RedisQueue) Pop(ctx context.Context, timeout time.Duration) (*Job, erro
 		return nil, fmt.Errorf("failed to unmarshal job: %w", err)
 	}
 
-	return &job, nil
+	msg := types.QueueMessage{
+		ID:      job.ID,
+		Type:    job.Type,
+		Payload: job.Data,
+	}
+
+	return []types.QueueMessage{msg}, nil
+}
+
+func (q *RedisQueue) Delete(ctx context.Context, messageID string) error {
+	messages, err := q.client.LRange(ctx, q.name, 0, -1).Result()
+	if err != nil {
+		return err
+	}
+
+	for i, msg := range messages {
+		var job Job
+		if err := json.Unmarshal([]byte(msg), &job); err != nil {
+			continue
+		}
+		if job.ID == messageID {
+			return q.client.LSet(ctx, q.name, int64(i), "DELETED").Err()
+		}
+	}
+	return nil
 }
 
 func (q *RedisQueue) Size(ctx context.Context) (int64, error) {
@@ -107,9 +128,22 @@ func (ps *RedisPubSub) Publish(ctx context.Context, channel string, message inte
 	return ps.client.Publish(ctx, channel, data).Err()
 }
 
-func (ps *RedisPubSub) Subscribe(ctx context.Context, channel string) <-chan *redis.Message {
+func (ps *RedisPubSub) Subscribe(ctx context.Context, channel string) (<-chan interface{}, error) {
 	pubsub := ps.client.Subscribe(ctx, channel)
-	return pubsub.Channel()
+	ch := make(chan interface{})
+
+	go func() {
+		defer close(ch)
+		for msg := range pubsub.Channel() {
+			var data interface{}
+			if err := json.Unmarshal([]byte(msg.Payload), &data); err != nil {
+				continue
+			}
+			ch <- data
+		}
+	}()
+
+	return ch, nil
 }
 
 func (ps *RedisPubSub) Close() error {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	queuepkg "github.com/MdSadiqMd/Semantic-Search-Engine/internal/queue"
+	"github.com/MdSadiqMd/Semantic-Search-Engine/internal/types"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
@@ -33,9 +34,9 @@ func TestSQSQueue_Integration(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Dequeue
-	var msgs []queuepkg.QueueMessage
-	for i := 0; i < 5; i++ {
-		msgs, err = q.Dequeue(ctx)
+	var msgs []types.QueueMessage
+	for range 5 {
+		msgs, err = q.Dequeue(ctx, 5000)
 		assert.NoError(t, err)
 		if len(msgs) > 0 {
 			break

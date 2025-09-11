@@ -146,8 +146,8 @@ func main() {
 		Handler: r,
 	}
 
-	/* wsHandler := handlers.NewWebSocketHandler(redisPubSub, logger)
-	go wsHandler.Start() */
+	wsHandler := handlers.NewWebSocketHandler(redisPubSub, logger)
+	go wsHandler.Start()
 
 	go func() {
 		logger.Info("Starting API server",

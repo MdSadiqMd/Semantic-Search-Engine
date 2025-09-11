@@ -2,23 +2,25 @@ package queue
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/MdSadiqMd/Semantic-Search-Engine/internal/types"
 	"go.uber.org/zap"
 )
 
 type JobHandler func(ctx context.Context, job *Job) error
 
 type Worker struct {
-	queue    *RedisQueue
+	queue    types.Queue
 	handlers map[string]JobHandler
 	logger   *zap.Logger
 	ctx      context.Context
 	cancel   context.CancelFunc
 }
 
-func NewWorker(queue *RedisQueue, logger *zap.Logger) *Worker {
+func NewWorker(queue types.Queue, logger *zap.Logger) *Worker {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Worker{
@@ -43,26 +45,44 @@ func (w *Worker) Start() {
 			w.logger.Info("Worker stopped")
 			return
 		default:
-			job, err := w.queue.Pop(w.ctx, 5*time.Second)
+			messages, err := w.queue.Dequeue(w.ctx, 5*time.Second)
 			if err != nil {
-				w.logger.Error("Failed to pop job", zap.Error(err))
+				w.logger.Error("Failed to dequeue job", zap.Error(err))
 				continue
 			}
 
-			if job == nil {
+			if len(messages) == 0 {
 				continue // No job available, continue polling
 			}
 
-			w.processJob(job)
+			for _, msg := range messages {
+				w.processMessage(msg)
+			}
 		}
 	}
 }
 
-func (w *Worker) processJob(job *Job) {
+func (w *Worker) processMessage(msg types.QueueMessage) {
+	job := &Job{
+		ID:   msg.ID,
+		Type: msg.Type,
+		Data: make(map[string]interface{}),
+	}
+
+	if payload, ok := msg.Payload.(map[string]interface{}); ok {
+		job.Data = payload
+	} else {
+		if payloadStr, ok := msg.Payload.(string); ok {
+			if err := json.Unmarshal([]byte(payloadStr), &job.Data); err != nil {
+				w.logger.Error("Failed to unmarshal job payload", zap.Error(err))
+				return
+			}
+		}
+	}
+
 	w.logger.Info("Processing job",
 		zap.String("id", job.ID),
-		zap.String("type", job.Type),
-		zap.Int("attempts", job.Attempts))
+		zap.String("type", job.Type))
 
 	handler, exists := w.handlers[job.Type]
 	if !exists {
@@ -70,7 +90,15 @@ func (w *Worker) processJob(job *Job) {
 		return
 	}
 
-	job.Attempts++
+	if job.Attempts == 0 {
+		job.Attempts = 1
+	}
+	if job.MaxRetries == 0 {
+		job.MaxRetries = 3
+	}
+	if job.CreatedAt.IsZero() {
+		job.CreatedAt = time.Now()
+	}
 
 	err := handler(w.ctx, job)
 	if err != nil {
@@ -88,7 +116,8 @@ func (w *Worker) processJob(job *Job) {
 			// exponential backoff
 			time.Sleep(time.Duration(job.Attempts*job.Attempts) * time.Second)
 
-			if pushErr := w.queue.Push(w.ctx, job); pushErr != nil {
+			job.Attempts++
+			if pushErr := w.queue.Enqueue(w.ctx, job.Type, job); pushErr != nil {
 				w.logger.Error("Failed to requeue job", zap.Error(pushErr))
 			}
 		} else {
@@ -106,6 +135,15 @@ func (w *Worker) processJob(job *Job) {
 func (w *Worker) Stop() {
 	w.logger.Info("Stopping worker")
 	w.cancel()
+}
+
+type Job struct {
+	ID         string                 `json:"id"`
+	Type       string                 `json:"type"`
+	Data       map[string]interface{} `json:"data"`
+	CreatedAt  time.Time              `json:"created_at"`
+	Attempts   int                    `json:"attempts"`
+	MaxRetries int                    `json:"max_retries"`
 }
 
 const (
