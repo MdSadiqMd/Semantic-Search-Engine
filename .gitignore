@@ -36,4 +36,5 @@ function.zip
 .aws-bucket-name
 .aws-dynamodb-tables
 .aws-sqs-queues
+.aws-lambda-function
 err.log
