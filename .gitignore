@@ -34,3 +34,5 @@ config/config.yaml
 embeddinggemma-env
 function.zip
 .aws-bucket-name
+.aws-dynamodb-tables
+err.log
