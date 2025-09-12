@@ -35,4 +35,5 @@ embeddinggemma-env
 function.zip
 .aws-bucket-name
 .aws-dynamodb-tables
+.aws-sqs-queues
 err.log
