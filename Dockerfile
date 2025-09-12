@@ -8,6 +8,8 @@ RUN go mod download
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 COPY config/ ./config/
+COPY scripts/ ./scripts/
+COPY test/ ./test/
 
 ARG BUILD_TARGET=server
 ARG VERSION=dev
@@ -58,7 +60,7 @@ RUN apk add --no-cache \
 
 RUN addgroup -g 1001 -S appgroup && \
     adduser -u 1001 -S appuser -G appgroup
-RUN mkdir -p /app/config /app/projects /app/logs /app/models /app/cache && \
+RUN mkdir -p /app/config /app/logs /app/models /app/cache && \
     chown -R appuser:appgroup /app
 ENV TZ=UTC
 
