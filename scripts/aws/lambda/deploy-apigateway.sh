@@ -81,7 +81,7 @@ for route in "${routes[@]}"; do
         --region "$REGION" >/dev/null 2>&1 || echo "   (already exists)"
 done
 
-STAGE_NAME="\$default"
+STAGE_NAME='$default'
 echo "Deploying stage: $STAGE_NAME"
 aws apigatewayv2 create-stage \
   --api-id "$API_ID" \
@@ -109,7 +109,7 @@ cat > .aws-apigateway <<EOF
 API_ID=$API_ID
 API_ENDPOINT=$API_ENDPOINT
 INTEGRATION_ID=$INTEGRATION_ID
-STAGE_NAME=$STAGE_NAME
+STAGE_NAME='$STAGE_NAME'
 EOF
 
 echo ""
