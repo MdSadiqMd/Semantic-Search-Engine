@@ -22,7 +22,7 @@ import (
 	"go.uber.org/zap"
 )
 
-var chiLambda *chiadapter.ChiLambda
+var chiAdapter *chiadapter.ChiLambdaV2
 
 func main() {
 	logger, err := zap.NewProduction()
@@ -41,12 +41,12 @@ func main() {
 		logger.Fatal("Failed to initialize router", zap.Error(err))
 	}
 
-	chiLambda = chiadapter.New(router)
+	chiAdapter = chiadapter.NewV2(router)
 	lambda.Start(Handler)
 }
 
-func Handler(ctx context.Context, req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	return chiLambda.ProxyWithContext(ctx, req)
+func Handler(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	return chiAdapter.ProxyWithContextV2(ctx, req)
 }
 
 func initializeRouter(cfg *config.Config, logger *zap.Logger) (*chi.Mux, error) {

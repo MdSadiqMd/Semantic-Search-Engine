@@ -3,7 +3,7 @@ set -e
 
 echo "🔨 Building Go Lambda function..."
 
-rm -rf bootstrap function.zip
+rm -f bootstrap function.zip
 
 echo "Compiling Go binary..."
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bootstrap cmd/lambda/main.go
@@ -14,7 +14,11 @@ fi
 
 echo "Binary size: $(du -h bootstrap | cut -f1)"
 echo "Creating function.zip..."
-zip function.zip bootstrap
+if [ -f "config/config.yaml" ]; then
+    zip function.zip bootstrap config/config.yaml
+else
+    zip function.zip bootstrap
+fi
 
 rm bootstrap
 

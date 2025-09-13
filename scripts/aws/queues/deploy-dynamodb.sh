@@ -16,13 +16,13 @@ wait_for_active() {
       --query "Table.TableStatus" \
       --output text 2>/dev/null || echo "MISSING")
     if [ "$status" == "ACTIVE" ]; then
-      echo "✅ $table is ACTIVE"
+      echo "$table is ACTIVE"
       break
     elif [ "$status" == "MISSING" ]; then
       echo "❌ $table not found, aborting"
       exit 1
     else
-      echo "⏳ $table is still $status..."
+      echo "$table is still $status..."
       sleep 5
     fi
   done
@@ -45,10 +45,10 @@ create_table() {
   if aws dynamodb create-table \
     --cli-input-json "$spec" \
     --region "$REGION" > /dev/null 2> err.log; then
-    echo "➡️ $name table creation started"
+    echo "$name table creation started"
   else
     if grep -q "Table already exists" err.log; then
-      echo "ℹ️ $name table already exists"
+      echo "$name table already exists"
     else
       echo "❌ Failed to create $name table"
       cat err.log
