@@ -20,9 +20,19 @@ fi
 echo "✅ Prerequisites check passed"
 
 echo "Environment Variables Check"
+if command -v yq &> /dev/null; then
+  export NEON_DATABASE_URL=$(yq -r '.database.postgres.dsn' config/config.yaml)
+  export NEO4J_URI=$(yq -r '.database.neo4j.uri' config/config.yaml)
+  export NEO4J_USERNAME=$(yq -r '.database.neo4j.username' config/config.yaml)
+  export NEO4J_PASSWORD=$(yq -r '.database.neo4j.password' config/config.yaml)
+  export GOOGLE_AI_API_KEY=$(yq -r '.embedding.api_key' config/config.yaml)
+else
+  echo "❌ yq not found. Please install yq (https://github.com/mikefarah/yq)"
+  exit 1
+fi
+
 required_vars=("NEON_DATABASE_URL" "NEO4J_URI" "NEO4J_USERNAME" "NEO4J_PASSWORD" "GOOGLE_AI_API_KEY")
 missing_vars=()
-
 for var in "${required_vars[@]}"; do
     if [ -z "${!var}" ]; then
         missing_vars+=("$var")

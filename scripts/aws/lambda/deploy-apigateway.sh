@@ -26,7 +26,8 @@ if [ -z "$API_ID" ] || [ "$API_ID" == "None" ]; then
         --cors-configuration '{
             "AllowHeaders": ["content-type", "x-amz-date", "authorization", "x-api-key", "x-amz-security-token", "cache-control", "accept"],
             "AllowMethods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            "AllowOrigins": ["*"],
+            "AllowOrigins": ["http://localhost:3000"],
+            "AllowCredentials": true,
             "ExposeHeaders": ["content-type", "cache-control"],
             "MaxAge": 300
         }' \
